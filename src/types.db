@@ -251,6 +251,7 @@ ps_rss                  value:GAUGE:0:9223372036854775807
 ps_stacksize            value:GAUGE:0:9223372036854775807
 ps_state                value:GAUGE:0:65535
 ps_vm                   value:GAUGE:0:9223372036854775807
+ps_pid                  value:GAUGE:0:U
 pstates_enabled         value:GAUGE:0:1
 pubsub                  value:GAUGE:0:U
 queue_length            value:GAUGE:0:U

@@ -220,6 +220,7 @@ typedef struct process_entry_s {
 typedef struct procstat_entry_s {
   unsigned long id;
   unsigned char age;
+  char name[PROCSTAT_NAME_LEN];
 
   derive_t vmem_minflt_counter;
   derive_t vmem_majflt_counter;
@@ -291,6 +292,7 @@ typedef struct procstat {
   bool report_maps_num;
   bool report_ctx_switch;
   bool report_delay;
+  bool report_pid;
 
   struct procstat *next;
   struct procstat_entry_s *instances;
@@ -304,6 +306,7 @@ static bool report_fd_num;
 static bool report_maps_num;
 static bool report_delay;
 static bool report_sys_ctxt_switch;
+static bool report_pid;
 
 #if HAVE_THREAD_INFO
 static mach_port_t port_host_self;
@@ -375,6 +378,7 @@ static procstat_t *ps_list_register(const char *name, const char *regexp) {
   new->report_maps_num = report_maps_num;
   new->report_ctx_switch = report_ctx_switch;
   new->report_delay = report_delay;
+  new->report_pid = report_pid;
 
 #if HAVE_REGEX_H
   if (regexp != NULL) {
@@ -543,6 +547,7 @@ static void ps_list_add(const char *name, const char *cmdline,
       if (new == NULL)
         return;
       new->id = entry->id;
+      sstrncpy(new->name, entry->name, sizeof(new->name));
 
       if (pse == NULL)
         ps->instances = new;
@@ -667,6 +672,8 @@ static void ps_tune_instance(oconfig_item_t *ci, procstat_t *ps) {
       WARNING("processes plugin: The plugin has been compiled without support "
               "for the \"CollectDelayAccounting\" option.");
 #endif
+    } else if (strcasecmp(c->key, "CollectPid") == 0) {
+      cf_util_get_boolean(c, &ps->report_pid);
     } else {
       ERROR("processes plugin: Option \"%s\" not allowed here.", c->key);
     }
@@ -737,6 +744,8 @@ static int ps_config(oconfig_item_t *ci) {
 #endif
     } else if (strcasecmp(c->key, "CollectSystemContextSwitch") == 0) {
       cf_util_get_boolean(c, &report_sys_ctxt_switch);
+    } else if (strcasecmp(c->key, "CollectPid") == 0) {
+      cf_util_get_boolean(c, &report_pid);
     } else {
       ERROR("processes plugin: The `%s' configuration option is not "
             "understood and will be ignored.",
@@ -824,6 +833,19 @@ static void ps_submit_state(const char *state, double value) {
   plugin_dispatch_values(&vl);
 }
 
+/* submit pid num about each process entry. */
+static void ps_submit_pid(procstat_t *ps, value_list_t *vl) {
+  sstrncpy(vl->type, "ps_pid", sizeof(vl->type));
+
+  procstat_entry_t *pse;
+  for (pse = ps->instances; pse != NULL; pse = pse->next) {
+    sstrncpy(vl->type_instance, pse->name, sizeof(vl->type_instance));
+    vl->values[0].gauge = pse->id;
+    vl->values_len = 1;
+    plugin_dispatch_values(vl);
+  }
+}
+
 /* submit info about specific process (e.g.: memory taken, cpu usage, etc..) */
 static void ps_submit_proc_list(procstat_t *ps) {
   value_list_t vl = VALUE_LIST_INIT;
@@ -832,6 +854,9 @@ static void ps_submit_proc_list(procstat_t *ps) {
   vl.values = values;
   sstrncpy(vl.plugin, "processes", sizeof(vl.plugin));
   sstrncpy(vl.plugin_instance, ps->name, sizeof(vl.plugin_instance));
+
+  if (ps->report_pid)
+    ps_submit_pid(ps, &vl);
 
   sstrncpy(vl.type, "ps_vm", sizeof(vl.type));
   vl.values[0].gauge = ps->vmem_size;
